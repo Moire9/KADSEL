@@ -60,8 +60,11 @@ class ClassTransformer : IClassTransformer {
 			if (it && !bytecodeDirectory.exists()) bytecodeDirectory.mkdirs()
 		}
 
+		/** Multimap of class managers to their name (to make finding them easier). */
+		private val classMap = ArrayListMultimap.create<String, ClassManager.() -> Unit>()
+
 		/** Register multiple [TransformerManager]s using DSL notation. */
-		@JvmStatic fun registerTransformer(vararg transformers: TransformerManager.() -> Unit): Unit = // must specify type
+		fun registerTransformer(vararg transformers: TransformerManager.() -> Unit): Unit = // must specify type
 			transformers.forEach(::registerTransformer)
 
 		/**
@@ -69,11 +72,8 @@ class ClassTransformer : IClassTransformer {
 		 *
 		 * It is highly recommended that you register your transformers at clinit!!
 		 */
-		@JvmStatic fun registerTransformer(transformer: TransformerManager.() -> Unit) =
-			TransformerManager(transformer).classModifications.forEach { classMap.put(it.className, it) }
-
-		/** Multimap of class managers to their name (to make finding them easier). */
-		private val classMap = ArrayListMultimap.create<String, ClassManager>()
+		fun registerTransformer(transformer: TransformerManager.() -> Unit) =
+			classMap.putAll(TransformerManager(transformer).classModifications)
 
 
 		/** Write bytecode to the `.minecraft/bytecode` directory. */
@@ -97,7 +97,7 @@ class ClassTransformer : IClassTransformer {
 				ClassReader(bytes).accept(this, ClassReader.EXPAND_FRAMES)
 			}
 
-			classMap.get(name).forEach { it.transform(node) }
+			ClassManager(node).apply { classMap.get(name).forEach(::apply) }
 
 			try {
 				node.accept(writer)

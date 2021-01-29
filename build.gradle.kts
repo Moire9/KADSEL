@@ -4,7 +4,7 @@ import java.io.InputStreamReader
 import java.util.Locale.ENGLISH
 
 object Const {
-	const val VERSION = "1.0"
+	const val VERSION = "1.1"
 
 	const val FORGE_VERSION:      String = "1.8.9-11.15.1.2318-1.8.9"
 	const val MCP_VERSION:        String = "stable_22"
