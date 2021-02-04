@@ -21,14 +21,15 @@
  *
  */
 
-package tech.napkin.libs.kadsel.dsl
+package tech.napkin.libs.kadsel.dsl.manager
 
+import codes.som.anthony.koffee.BlockAssembly
 import com.google.common.collect.ArrayListMultimap
 import org.objectweb.asm.Attribute
 import org.objectweb.asm.tree.*
-import tech.napkin.libs.kadsel.MethodDescriptor
+import tech.napkin.libs.kadsel.*
+import tech.napkin.libs.kadsel.dsl.initializer.FieldInitializer
 import tech.napkin.libs.kadsel.exception.MalformedDescriptorException
-import tech.napkin.libs.kadsel.fullDescriptor
 
 /** Holds a set of modifications to the methods of a class. */
 class ClassManager internal constructor(internal val classNode: ClassNode) {
@@ -57,7 +58,7 @@ class ClassManager internal constructor(internal val classNode: ClassNode) {
 	var superName: String? get() = classNode.superName; set(value) { classNode.superName = value }
 
 	/** The internal names of the class's interfaces. */
-	var interfaces: List<String> get() = classNode.interfaces; set(value) { classNode.interfaces = value }
+	var interfaces: MutableList<String> get() = classNode.interfaces; set(value) { classNode.interfaces = value }
 
 	/** The name of the source file from which this class was compiled. */
 	var sourceFile: String? get() = classNode.sourceFile; set(value) { classNode.sourceFile = value }
@@ -84,32 +85,33 @@ class ClassManager internal constructor(internal val classNode: ClassNode) {
 	var outerMethodDesc: String? get() = classNode.outerMethodDesc; set(value) { classNode.outerMethodDesc = value }
 
 	/** The runtime visible annotations of this class. */
-	var visibleAnnotations: List<AnnotationNode>? get() = classNode.visibleAnnotations
+	var visibleAnnotations: MutableList<AnnotationNode>? get() = classNode.visibleAnnotations
 		set(value) { classNode.visibleAnnotations = value }
 
 	/** The runtime invisible annotations of this class. */
-	var invisibleAnnotations: List<AnnotationNode>? get() = classNode.invisibleAnnotations
+	var invisibleAnnotations: MutableList<AnnotationNode>? get() = classNode.invisibleAnnotations
 		set(value) { classNode.invisibleAnnotations = value }
 
 	/** The runtime visible type annotations of this class. */
-	var visibleTypeAnnotations: List<TypeAnnotationNode>? get() = classNode.visibleTypeAnnotations
+	var visibleTypeAnnotations: MutableList<TypeAnnotationNode>? get() = classNode.visibleTypeAnnotations
 		set(value) { classNode.visibleTypeAnnotations = value }
 
 	/** The runtime invisible type annotations of this class. */
-	var invisibleTypeAnnotations: List<TypeAnnotationNode>? get() = classNode.invisibleTypeAnnotations
+	var invisibleTypeAnnotations: MutableList<TypeAnnotationNode>? get() = classNode.invisibleTypeAnnotations
 		set(value) { classNode.invisibleTypeAnnotations = value }
 
 	/** The non standard attributes of this class. */
-	var attrs: List<Attribute>? get() = classNode.attrs; set(value) { classNode.attrs = value }
+	var attrs: MutableList<Attribute>? get() = classNode.attrs; set(value) { classNode.attrs = value }
 
 	/** Information about the inner classes of this class. */
-	var innerClasses: List<InnerClassNode> get() = classNode.innerClasses; set(value) { classNode.innerClasses = value }
+	var innerClasses: MutableList<InnerClassNode> get() = classNode.innerClasses
+		set(value) { classNode.innerClasses = value }
 
 	/** The fields of this class. */
-	var fields: List<FieldNode> get() = classNode.fields; set(value) { classNode.fields = value }
+	var fields: MutableList<FieldNode> get() = classNode.fields; set(value) { classNode.fields = value }
 
 	/** The methods of this class. */
-	var methods: List<MethodNode> get() = classNode.methods; set(value) { classNode.methods = value }
+	var methods: MutableList<MethodNode> get() = classNode.methods; set(value) { classNode.methods = value }
 
 	/* END OF NODE PROPERTIES */
 
@@ -117,18 +119,64 @@ class ClassManager internal constructor(internal val classNode: ClassNode) {
 	/** All methods that are modified by this [ClassManager]. */
 	private val methodModifications = ArrayListMultimap.create<MethodDescriptor, MethodManager.() -> Unit>()
 
+	private val newFields = mutableListOf<FieldInitializer>()
 
-	/** Apply all modifications to the given [ClassNode]. */
-	internal fun transform(classNode: ClassNode) = methodModifications.keySet().forEach { methodDesc ->
-		classNode.methods.find(methodDesc::equals)?.apply {
-			MethodManager(this).apply {
-				methodModifications.get(methodDesc).forEach(::apply)
-			}
-		} ?: throw NoSuchMethodException("Could not find method: ${classNode.name}.${methodDesc.fullName}")
+	/** Save all modifications. */
+	internal fun transform(mods: List<ClassManager.() -> Unit>) {
+		mods.forEach(::apply)
+		newFields.forEach { it.transform(classNode) }
+		methodModifications.keySet().forEach { methodDesc ->
+			classNode.methods.find(methodDesc::equals)?.apply {
+				MethodManager(this).apply {
+					methodModifications.get(methodDesc).forEach(::apply)
+				}
+			} ?: throw NoSuchMethodException("Could not find method: ${classNode.name}.${methodDesc.fullName}")
+		}
 	}
 
+	fun createMethodAsm(access: Int, name: String, args: String, returnType: String,
+						exceptions: Array<String> = arrayOf(), config: BlockAssembly.() -> Unit): Unit =
+		createMethod(access, name, args, returnType, exceptions) { instructions = asm(config) }
+
+
+	fun createMethodAsm(access: Int, name: String, returnType: String = "", exceptions: Array<String> = arrayOf(),
+						config: BlockAssembly.() -> Unit): Unit =
+		createMethod(access, name, returnType, exceptions) { instructions = asm(config) }
+
+
+	fun createMethod(access: Int, name: String, returnType: String = "", exceptions: Array<String> = arrayOf(),
+					 config: MethodManager.() -> Unit) =
+		createMethod(access, name, "", returnType, exceptions, config)
+
+
+	fun createMethod(access: Int, name: String, args: String, returnType: String, exceptions: Array<String> = arrayOf(),
+					 config: MethodManager.() -> Unit) {
+		methods.add(MethodNode(access, name, "($args)$returnType", null, exceptions))
+		methodModifications.put(MethodDescriptor(name, args, returnType), config)
+	}
+
+	/** Create a new field, storing into it [value]. */
+	fun createField(access: Int, name: String, type: String, value: Any?) {
+		newFields.add(FieldInitializer(access, name, type, value, null))
+	}
+
+	/**
+	 * Create a new field, and initialize it using the top item of the stack at the end
+	 * of the provided initialization code.
+	 */
+	fun createField(access: Int, name: String, type: String, initializer: BlockAssembly.() -> Unit) {
+		newFields.add(FieldInitializer(access, name, type, null, asm(initializer)))
+	}
+
+	/** Select a constructor. */
+	fun constructor(args: String = "", config: MethodManager.() -> Unit) =
+		method("<init>", args, "V", config)
+
+	/** Select clinit. */
+	fun clinit(config: MethodManager.() -> Unit) = method("<clinit>", "", "V", config)
+
 	/** Select a method with a descriptor. */
-	fun method(desc: String, config: MethodManager.() -> Unit) {
+	fun methodDesc(desc: String, config: MethodManager.() -> Unit) {
 		fullDescriptor.matcher(desc).apply {
 			if (matches()) {
 				return method(group("name"), group("args"), group("return"), config)
@@ -137,7 +185,8 @@ class ClassManager internal constructor(internal val classNode: ClassNode) {
 	}
 
 	/** Select a method with no arguments. */
-	fun method(name: String, ret: String, config: MethodManager.() -> Unit) = method(name, "", ret, config)
+	fun method(name: String, returnType: String = "", config: MethodManager.() -> Unit) =
+		method(name, "", returnType, config)
 
 	/**
 	 * Select a method within the class.

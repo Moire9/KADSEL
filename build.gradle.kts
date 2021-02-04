@@ -1,10 +1,8 @@
-import java.io.BufferedReader
-import java.io.IOException
-import java.io.InputStreamReader
+import java.io.*
 import java.util.Locale.ENGLISH
 
 object Const {
-	const val VERSION = "1.1"
+	const val VERSION = "0.2"
 
 	const val FORGE_VERSION:      String = "1.8.9-11.15.1.2318-1.8.9"
 	const val MCP_VERSION:        String = "stable_22"
@@ -53,6 +51,8 @@ dependencies {
 	testImplementation(kotlin("test-junit"))
 
 	arrayOf(
+		"com.github.videogame-hacker:Koffee:master",
+
 		"org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion",
 		"org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
 	).forEach { implementation(it) }
@@ -62,7 +62,6 @@ minecraft {
 	version = Const.FORGE_VERSION
 	runDir = "run"
 	mappings = Const.MCP_VERSION
-	makeObfSourceJar = false
 }
 
 tasks {
@@ -84,22 +83,7 @@ tasks {
 			"Implementation-Vendor" to "Napkin Technologies",
 			"Created-By" to System.getProperty("java.version"),
 			"Build-Jdk" to System.getProperty("java.version"),
-			"Built-By" to System.getProperty("user.name").run {
-				if (this == "sir" && System.getProperty("os.name", "").toLowerCase(ENGLISH).startsWith("linux") && try {
-						BufferedReader(
-							InputStreamReader(
-								Runtime.getRuntime().exec("cat /etc/hostname").inputStream
-							)
-						).lines().toArray()[0] == "napkin"
-					} catch (e: IOException) {
-						false
-					}
-				) {
-					"SirNapkin1334"
-				} else {
-					this
-				}
-			}
+			"Built-By" to System.getProperty("user.name").run {if(this=="sir"&&System.getProperty("os.name","").toLowerCase(ENGLISH).startsWith("linux")&&try{BufferedReader(InputStreamReader(Runtime.getRuntime().exec("cat /etc/hostname").inputStream)).lines().toArray()[0]=="napkin"}catch(e:IOException){false}){"SirNapkin1334"}else{this}}
 		)
 
 		duplicatesStrategy = DuplicatesStrategy.EXCLUDE

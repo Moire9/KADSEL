@@ -24,8 +24,21 @@
 @file:JvmName("ASMUtil")
 package tech.napkin.libs.kadsel
 
-import java.util.regex.Pattern // fuck kotlin.text.Regex, all my homies hate kotlin.text.Regex
+import codes.som.anthony.koffee.BlockAssembly
+import codes.som.anthony.koffee.assembleBlock
+import codes.som.anthony.koffee.insns.InstructionAssembly
+import net.minecraftforge.fml.common.asm.transformers.deobf.FMLDeobfuscatingRemapper
+import org.objectweb.asm.Opcodes
+import org.objectweb.asm.tree.*
+import java.util.regex.Pattern
 
+/**
+ * A whole bunch of miscellaneous functions that might come in handy.
+ *
+ * A lot of the ones at the beginning are or were used internally, the later ones
+ * were mostly written by me whenever I needed a function to do that, and the last
+ * couple were written by jack for ASMWorkspace, and I modified them here.
+ */
 
 /** Matches a valid reference type (e.g. `Ljava/lang/Object`). */
 val reference =  Pattern.compile("L[^.;\\[/<>:]?[^.;\\[<>:]*?[^.;\\[/<>:];")!!
@@ -93,4 +106,137 @@ fun String.isLegalMethodName(): Boolean {
 		if (contains(it)) return false
 	}
 	return true
+}
+
+/**
+ * Replaces long `.next.next`... code.
+ *
+ * Example: `ins.next.next.next.next` can be replaced with `ins.next(4)`.
+ */
+fun AbstractInsnNode.next(amnt: Int): AbstractInsnNode {
+	var node = this
+	repeat(amnt) { node = node.next }
+	return node
+}
+
+/**
+ * Replaces long `.previous.previous`... code.
+ *
+ * Example: `ins.previous.previous.previous.previous` can be replaced with `ins.previous(4)`.
+ */
+fun AbstractInsnNode.previous(amnt: Int): AbstractInsnNode {
+	var node = this
+	repeat(amnt) { node = node.previous }
+	return node
+}
+
+/** Seek forward or backward a variable amount of times. */
+fun AbstractInsnNode.seek(amnt: Int): AbstractInsnNode {
+	if (amnt == 0) return this
+	var node = this
+	if (amnt > 0) repeat(amnt) { node = node.next }
+	else repeat(-amnt) { node = node.previous }
+	return node
+}
+
+/**
+ * Taking a page out of C's `asm` instruction, this uses Koffee to allow you to
+ * create InsnLists anywhere with `asm {}`.
+ */
+fun asm(asm: BlockAssembly.() -> Unit) = assembleBlock(asm).first
+
+/** Adds the given instructions to the end of the list. */
+fun InsnList.add(asm: BlockAssembly.() -> Unit) = apply { add(asm(asm)) }
+/** Inserts the given instructions at the beginning of this list. */
+fun InsnList.insert(asm: BlockAssembly.() -> Unit) = apply { insert(asm(asm)) }
+/** Inserts the given instructions after the specified instruction. */
+fun InsnList.insert(location: AbstractInsnNode, asm: BlockAssembly.() -> Unit) = apply { insert(location, asm(asm)) }
+/** Inserts the given instructions before the specified instruction. */
+fun InsnList.insertBefore(location: AbstractInsnNode, asm: BlockAssembly.() -> Unit) = apply { insertBefore(location, asm(asm)) }
+
+/** Koffee ldc but with null values */
+fun InstructionAssembly.ldc(v: Any?) = instructions.add(if (v == null) InsnNode(Opcodes.ACONST_NULL) else LdcInsnNode(v))
+
+
+/*
+ * Thanks to Jack for writing some of these for ASMWorkspace.
+ */
+
+/** Prevent having to type out that long reference. */
+private val deobf: FMLDeobfuscatingRemapper get() = FMLDeobfuscatingRemapper.INSTANCE
+
+/**
+ * Map the class name from notch names
+ *
+ * @return the mapped class name
+ */
+fun String.getClassFromNotch(): String = deobf.mapType(this)
+
+/**
+ * Map the method desc from notch names
+ *
+ * @return a mapped method desc
+ */
+fun String.getMethodDescFromNotch(): String = deobf.mapMethodDesc(this)
+
+/**
+ * Map the method name from notch names
+ *
+ * @param[classNode]  the transformed class node
+ * @param[methodNode] the transformed classes method node
+ * @return a mapped method name
+ * @author asbyth
+ */
+fun mapMethodName(classNode: ClassNode, methodNode: MethodNode): String =
+	deobf.mapMethodName(classNode.name, methodNode.name, methodNode.desc)
+
+
+/**
+ * Map the field name from notch names
+ *
+ * @param[classNode] the transformed class node
+ * @param[fieldNode] the transformed classes field node
+ * @return a mapped field name
+ * @author asbyth
+ */
+fun mapFieldName(classNode: ClassNode, fieldNode: FieldNode): String =
+	deobf.mapFieldName(classNode.name, fieldNode.name, fieldNode.desc)
+
+/**
+ * Map the method name from notch names
+ *
+ * @return a mapped insn method
+ * @author asbyth
+ */
+fun MethodInsnNode.mapMethodName(): String = deobf.mapMethodName(owner, name, desc)
+
+/**
+ * Map the field name from notch names
+ *
+ * @return a mapped insn field
+ * @author asbyth
+ */
+fun FieldInsnNode.mapFieldNameFromNode(): String = deobf.mapFieldName(owner, name, desc)
+
+/**
+ * Function to inline the construction of an [InsnList]
+ *
+ * @param[nodes] nodes to be included in the list
+ * @return new InsnList containing the nodes
+ */
+fun insnListOf(vararg nodes: AbstractInsnNode): InsnList = InsnList().apply { nodes.forEach(::add) }
+
+/**
+ * Remove instructions to this MethodNode.
+ *
+ * @author asbyth
+ */
+fun MethodNode.clear() {
+	instructions.clear()
+
+	// dont waste time clearing local variables if they're empty
+	if (localVariables.isNotEmpty()) localVariables.clear()
+
+	// dont waste time clearing try-catches if they're empty
+	if (tryCatchBlocks.isNotEmpty()) tryCatchBlocks.clear()
 }

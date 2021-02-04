@@ -21,17 +21,14 @@
  *
  */
 
-package tech.napkin.libs.kadsel.dsl
+package tech.napkin.libs.kadsel.dsl.manager
 
 import com.google.common.collect.ArrayListMultimap
-import net.minecraftforge.fml.common.asm.transformers.deobf.FMLDeobfuscatingRemapper
-import org.objectweb.asm.Opcodes
-import org.objectweb.asm.tree.*
 import tech.napkin.libs.kadsel.exception.MalformedDescriptorException
 import tech.napkin.libs.kadsel.fullDescriptor
 
 /** A class to hold a set of modifications to different classes. */
-class TransformerManager internal constructor(config: TransformerManager.() -> Unit): Opcodes {
+class TransformerManager internal constructor(config: TransformerManager.() -> Unit) {
 
 
 	/** All the classes' modifications. */
@@ -48,11 +45,9 @@ class TransformerManager internal constructor(config: TransformerManager.() -> U
 	 */
 	@Suppress("UNREACHABLE_CODE")
 	fun method(desc: String, config: MethodManager.() -> Unit) = fullDescriptor.matcher(desc).apply {
-		if (matches()) {
-			return method(group("parent") ?: throw MalformedDescriptorException(
+		if (matches()) return method(group("parent") ?: throw MalformedDescriptorException(
 				"Method selector in transformer block must have a parent!"), group("name"), group("args"),
-				group("return"), config)
-		} else throw MalformedDescriptorException("Invalid descriptor - $desc")
+			group("return"), config) else throw MalformedDescriptorException("Invalid descriptor - $desc")
 	}.let{}
 
 	/**
@@ -79,99 +74,11 @@ class TransformerManager internal constructor(config: TransformerManager.() -> U
 		classModifications.put(className, config)
 	}
 
-	/*
-	 * Useful methods for modifying stuff. This is inherited by all Transformers.
-	 *
-	 * Thanks to Jack for writing some of these for ASMWorkspace.
-	 */
-
-	/** Prevent having to type out that long reference. */
-	private val deobf: FMLDeobfuscatingRemapper get() = FMLDeobfuscatingRemapper.INSTANCE
-
-	/**
-	 * Map the class name from notch names
-	 *
-	 * @return the mapped class name
-	 */
-	fun String.getClassFromNotch(): String = deobf.mapType(this)
-
-	/**
-	 * Map the method desc from notch names
-	 *
-	 * @return a mapped method desc
-	 */
-	fun String.getMethodDescFromNotch(): String = deobf.mapMethodDesc(this)
-
-	/**
-	 * Map the method name from notch names
-	 *
-	 * @param[classNode]  the transformed class node
-	 * @param[methodNode] the transformed classes method node
-	 * @return a mapped method name
-	 * @author asbyth
-	 */
-	fun mapMethodName(classNode: ClassNode, methodNode: MethodNode): String =
-		deobf.mapMethodName(classNode.name, methodNode.name, methodNode.desc)
-
-
-	/**
-	 * Map the field name from notch names
-	 *
-	 * @param[classNode] the transformed class node
-	 * @param[fieldNode] the transformed classes field node
-	 * @return a mapped field name
-	 * @author asbyth
-	 */
-	fun mapFieldName(classNode: ClassNode, fieldNode: FieldNode): String =
-		deobf.mapFieldName(classNode.name, fieldNode.name, fieldNode.desc)
-
-	/**
-	 * Map the method name from notch names
-	 *
-	 * @return a mapped insn method
-	 * @author asbyth
-	 */
-	fun MethodInsnNode.mapMethodName(): String = deobf.mapMethodName(owner, name, desc)
-
-	/**
-	 * Map the field name from notch names
-	 *
-	 * @return a mapped insn field
-	 * @author asbyth
-	 */
-	fun FieldInsnNode.mapFieldNameFromNode(): String = deobf.mapFieldName(owner, name, desc)
-
-	/**
-	 * Function to inline the construction of an [InsnList]
-	 *
-	 * @param[nodes] nodes to be included in the list
-	 * @return new InsnList containing the nodes
-	 */
-	fun insnListOf(vararg nodes: AbstractInsnNode): InsnList = InsnList().apply { nodes.forEach(::add) }
-
-	/**
-	 * Remove instructions to this MethodNode.
-	 *
-	 * @author asbyth
-	 */
-	fun MethodNode.clear() {
-		instructions.clear()
-
-		// dont waste time clearing local variables if they're empty
-		if (localVariables.isNotEmpty()) {
-			localVariables.clear()
-		}
-
-		// dont waste time clearing try-catches if they're empty
-		if (tryCatchBlocks.isNotEmpty()) {
-			tryCatchBlocks.clear()
-		}
-	}
 
 	/**
 	 * Put this at the bottom so that it is run after any fields are initialized, and
 	 * so that if any future fields are added it will always be last.
 	 */
-	init { this.config() }
+	init { config() }
 
 }

@@ -29,14 +29,14 @@ import org.apache.logging.log4j.LogManager
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.tree.ClassNode
-import tech.napkin.libs.kadsel.dsl.ClassManager
-import tech.napkin.libs.kadsel.dsl.TransformerManager
+import tech.napkin.libs.kadsel.dsl.manager.ClassManager
+import tech.napkin.libs.kadsel.dsl.manager.TransformerManager
 import java.io.File
 import java.io.FileOutputStream
 
 /**
  * In your [net.minecraftforge.fml.relauncher.IFMLLoadingPlugin], specify
- * `ClassTransformer::class.java.name` as one of your ASM Transformer classes.
+ * `ClassTransformer.name` as your ASM Transformer class.
  *
  * It is recommended to register your transformers in the clinit of that class as well.
  *
@@ -46,6 +46,8 @@ import java.io.FileOutputStream
 class ClassTransformer : IClassTransformer {
 
 	companion object {
+
+		val name = arrayOf(this::class.java.declaringClass.name)
 
 		private val bytecodeDirectory = File("bytecode")
 
@@ -60,7 +62,12 @@ class ClassTransformer : IClassTransformer {
 			if (it && !bytecodeDirectory.exists()) bytecodeDirectory.mkdirs()
 		}
 
-		/** Multimap of class managers to their name (to make finding them easier). */
+		/**
+		 * Multimap of class managers to their name.
+		 *
+		 * While technically not needed, this significantly speeds up finding the desired
+		 * [ClassManager] due to its usage of a [HashMap].
+		 */
 		private val classMap = ArrayListMultimap.create<String, ClassManager.() -> Unit>()
 
 		/** Register multiple [TransformerManager]s using DSL notation. */
@@ -93,11 +100,9 @@ class ClassTransformer : IClassTransformer {
 		private fun transform(name: String, bytes: ByteArray): ByteArray = if (!classMap.containsKey(name)) bytes else {
 			// todo see if i can have just one writer and re-use it constantly
 			val writer = ClassWriter(ClassWriter.COMPUTE_FRAMES)
-			val node = ClassNode().apply {
-				ClassReader(bytes).accept(this, ClassReader.EXPAND_FRAMES)
-			}
+			val node = ClassNode().apply { ClassReader(bytes).accept(this, ClassReader.EXPAND_FRAMES) }
 
-			ClassManager(node).apply { classMap.get(name).forEach(::apply) }
+			ClassManager(node).transform(classMap.get(name))
 
 			try {
 				node.accept(writer)
@@ -112,7 +117,7 @@ class ClassTransformer : IClassTransformer {
 
 	}
 
-	/** Non-static wrapper that also eliminates pesky nulls. */
+	/** Non-static wrapper that also eliminates nulls. */
 	override fun transform(name: String?, className: String?, bytes: ByteArray?): ByteArray? =
 		if (bytes == null || className == null || name == null) null else transform(className, bytes)
 
