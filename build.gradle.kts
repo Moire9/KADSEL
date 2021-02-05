@@ -18,6 +18,7 @@ buildscript {
 
 plugins {
 	java
+	maven
 	kotlin("jvm") version "1.4.21"
 	id("net.minecraftforge.gradle.forge") version "2.0.1"
 }
@@ -64,16 +65,33 @@ minecraft {
 	mappings = Const.MCP_VERSION
 }
 
+task("javadocJar",  tasks.jar.get()::class) {
+	archiveClassifier.set("javadoc")
+	from(tasks.javadoc.get().destinationDir)
+}
+
+artifacts {
+	archives(tasks.asMap["javadocJar"]!!)
+	archives(tasks.jar)
+	archives(tasks.sourceJar)
+}
+
 tasks {
+
+	wrapper {
+		gradleVersion = "5.6.4"
+		distributionType = Wrapper.DistributionType.ALL
+	}
 
 	compileJava.get().options.encoding = "UTF-8"
 
-	test.get().useJUnit()
 
 	compileKotlin.get().kotlinOptions {
 		jvmTarget = Const.JAVA_VERSION_STR
-		freeCompilerArgs = freeCompilerArgs + "-Xno-param-assertions" // make compilation faster or some shit
+		freeCompilerArgs = freeCompilerArgs + arrayOf("-Xstrict-java-nullability-assertions", "-Xassertions=jvm", "-java-parameters")
 	}
+
+	sourceJar.get().from(sourceSets.main.get().allSource)
 
 	jar {
 
@@ -88,6 +106,8 @@ tasks {
 
 		duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 		archiveClassifier.set("")
+
+		from("LICENSE")
 
 	}
 
